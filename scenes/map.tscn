@@ -11,14 +11,9 @@
 [ext_resource type="Texture2D" uid="uid://5bnfck0drgcw" path="res://assets/map/red_castle.png" id="10_cred"]
 [ext_resource type="Texture2D" uid="uid://ba1a78i0ysc54" path="res://assets/map/blue_banner.png" id="11_bblue"]
 [ext_resource type="Texture2D" uid="uid://dvauxtsmoh0f" path="res://assets/map/red_banner.png" id="12_bred"]
-[ext_resource type="Texture2D" uid="uid://bq4eudd7fgr8t" path="res://assets/characters/player_B.png" id="13_hero"]
-[ext_resource type="Script" uid="uid://gc85nqygdioi" path="res://scripts/hero.gd" id="14_hero_script"]
-[ext_resource type="Texture2D" uid="uid://cw4ypvs0epmdu" path="res://assets/characters/player_A.png" id="15_c00ee"]
 [ext_resource type="Script" uid="uid://d3b48y6oiqr8b" path="res://scripts/camera_pan.gd" id="15_camera_script"]
 [ext_resource type="Script" path="res://scripts/map.gd" id="16_map_script"]
-
-[sub_resource type="CircleShape2D" id="CircleShape2D_hero"]
-radius = 20.0
+[ext_resource type="PackedScene" path="res://scenes/hud.tscn" id="17_hud"]
 
 [node name="Map" type="Node2D" unique_id=70872849]
 script = ExtResource("16_map_script")
@@ -2688,21 +2683,4 @@ texture = ExtResource("12_bred")
 z_index = 15
 y_sort_enabled = true
 
-[node name="Hero" type="CharacterBody2D" parent="Units" unique_id=170910973]
-y_sort_enabled = true
-script = ExtResource("14_hero_script")
-
-[node name="Sprite2D" type="Sprite2D" parent="Units/Hero" unique_id=843297049]
-scale = Vector2(0.55, 0.55)
-texture = ExtResource("13_hero")
-
-[node name="CollisionShape2D" type="CollisionShape2D" parent="Units/Hero" unique_id=1299181923]
-shape = SubResource("CircleShape2D_hero")
-
-[node name="Character010" type="Sprite2D" parent="." unique_id=600697259]
-position = Vector2(-8, -1296)
-texture = ExtResource("15_c00ee")
-
-[node name="Character025" type="Sprite2D" parent="." unique_id=535842276]
-position = Vector2(-32, 1040)
-texture = ExtResource("13_hero")
+[node name="HUD" parent="." instance=ExtResource("17_hud")]

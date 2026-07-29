@@ -1,6 +1,10 @@
 extends Node
-## Colyseus multiplayer bootstrap for Valley Clash.
-## Create Game hosts a room with code "xxxx"; Join Game joins that room.
+## Colyseus networking for Valley Clash (autoload "Network").
+##
+## The server owns all gameplay state. This node mirrors the server schema,
+## re-emits state signals for the match view / HUD, and sends gameplay
+## intents ("move", "buy_item", "build_mine", "spawn_unit", "set_command").
+## Clients never mutate game state locally.
 
 const ROOM_NAME := "game"
 const ROOM_CODE := "xxxx"
@@ -11,11 +15,104 @@ const CLOUD_ENDPOINT := "wss://pl-waw-ab59d502.colyseus.cloud"
 signal room_joined(room: Variant)
 signal room_failed(message: String)
 signal status_changed(text: String)
-signal remote_player_moved(id: String, pos: Vector2, target: Vector2)
-signal remote_player_left(id: String)
+## First full state arrived (safe to build entity views / HUD values).
+signal state_ready()
+## Emitted on every state patch from the server.
+signal state_updated()
+signal unit_added(id: String, unit: Variant)
+signal unit_removed(id: String)
 
 ## Web builds can't load the Colyseus GDExtension; they use the JS SDK adapter.
+## Known limitation: the web adapter is messages-only (no schema sync), so
+## matches won't render on web exports — desktop is the supported target.
 const WebNetwork := preload("res://scripts/web_network.gd")
+
+
+# ---------------------------------------------------------------------------
+# GDScript mirror of the server schema (field names must match EXACTLY).
+# ---------------------------------------------------------------------------
+
+class TeamState extends Colyseus.Schema:
+	static func definition() -> Array:
+		return [
+			Colyseus.Schema.Field.new("sessionId", Colyseus.Schema.STRING),
+			Colyseus.Schema.Field.new("gold", Colyseus.Schema.NUMBER),
+			Colyseus.Schema.Field.new("mines", Colyseus.Schema.NUMBER),
+			Colyseus.Schema.Field.new("income", Colyseus.Schema.NUMBER),
+			Colyseus.Schema.Field.new("command", Colyseus.Schema.STRING),
+			Colyseus.Schema.Field.new("nextMineCost", Colyseus.Schema.NUMBER),
+		]
+
+
+class KnightState extends Colyseus.Schema:
+	static func definition() -> Array:
+		return [
+			Colyseus.Schema.Field.new("team", Colyseus.Schema.STRING),
+			Colyseus.Schema.Field.new("x", Colyseus.Schema.NUMBER),
+			Colyseus.Schema.Field.new("y", Colyseus.Schema.NUMBER),
+			Colyseus.Schema.Field.new("hp", Colyseus.Schema.NUMBER),
+			Colyseus.Schema.Field.new("maxHp", Colyseus.Schema.NUMBER),
+			Colyseus.Schema.Field.new("damage", Colyseus.Schema.NUMBER),
+			Colyseus.Schema.Field.new("attackSpeed", Colyseus.Schema.NUMBER),
+			Colyseus.Schema.Field.new("moveSpeed", Colyseus.Schema.NUMBER),
+			Colyseus.Schema.Field.new("armor", Colyseus.Schema.NUMBER),
+			Colyseus.Schema.Field.new("regen", Colyseus.Schema.NUMBER),
+			Colyseus.Schema.Field.new("items", Colyseus.Schema.ARRAY, Colyseus.Schema.STRING),
+			Colyseus.Schema.Field.new("alive", Colyseus.Schema.BOOLEAN),
+			Colyseus.Schema.Field.new("respawnIn", Colyseus.Schema.NUMBER),
+		]
+
+
+class UnitState extends Colyseus.Schema:
+	static func definition() -> Array:
+		return [
+			Colyseus.Schema.Field.new("team", Colyseus.Schema.STRING),
+			Colyseus.Schema.Field.new("type", Colyseus.Schema.STRING),
+			Colyseus.Schema.Field.new("x", Colyseus.Schema.NUMBER),
+			Colyseus.Schema.Field.new("y", Colyseus.Schema.NUMBER),
+			Colyseus.Schema.Field.new("hp", Colyseus.Schema.NUMBER),
+			Colyseus.Schema.Field.new("maxHp", Colyseus.Schema.NUMBER),
+		]
+
+
+class CastleState extends Colyseus.Schema:
+	static func definition() -> Array:
+		return [
+			Colyseus.Schema.Field.new("team", Colyseus.Schema.STRING),
+			Colyseus.Schema.Field.new("hp", Colyseus.Schema.NUMBER),
+			Colyseus.Schema.Field.new("maxHp", Colyseus.Schema.NUMBER),
+		]
+
+
+class ConfigSnapshotState extends Colyseus.Schema:
+	static func definition() -> Array:
+		return [
+			Colyseus.Schema.Field.new("itemPrices", Colyseus.Schema.MAP, Colyseus.Schema.NUMBER),
+			Colyseus.Schema.Field.new("unitCosts", Colyseus.Schema.MAP, Colyseus.Schema.NUMBER),
+			Colyseus.Schema.Field.new("maxItems", Colyseus.Schema.NUMBER),
+			Colyseus.Schema.Field.new("incomePerMine", Colyseus.Schema.NUMBER),
+			Colyseus.Schema.Field.new("unitKillReward", Colyseus.Schema.NUMBER),
+			Colyseus.Schema.Field.new("knightKillReward", Colyseus.Schema.NUMBER),
+		]
+
+
+class MatchState extends Colyseus.Schema:
+	static func definition() -> Array:
+		return [
+			Colyseus.Schema.Field.new("code", Colyseus.Schema.STRING),
+			Colyseus.Schema.Field.new("phase", Colyseus.Schema.STRING),
+			Colyseus.Schema.Field.new("winner", Colyseus.Schema.STRING),
+			Colyseus.Schema.Field.new("teams", Colyseus.Schema.MAP, TeamState),
+			Colyseus.Schema.Field.new("knights", Colyseus.Schema.MAP, KnightState),
+			Colyseus.Schema.Field.new("castles", Colyseus.Schema.MAP, CastleState),
+			Colyseus.Schema.Field.new("units", Colyseus.Schema.MAP, UnitState),
+			Colyseus.Schema.Field.new("config", Colyseus.Schema.REF, ConfigSnapshotState),
+		]
+
+
+# ---------------------------------------------------------------------------
+# Connection state
+# ---------------------------------------------------------------------------
 
 var client: Colyseus.Client
 var room: Colyseus.Room
@@ -24,9 +121,9 @@ var is_host: bool = false
 ## Raw value from the Server IP field (host, URL, or full ws/wss endpoint).
 var server_host: String = CLOUD_ENDPOINT
 var room_code: String = ROOM_CODE
-## Last known state of every other player in the room:
-## session_id -> {"pos": Vector2, "target": Vector2}
-var remote_players: Dictionary = {}
+
+var _callbacks  # Colyseus.Callbacks, wired once the first state arrives.
+var _has_state: bool = false
 
 
 func set_server_host(host: String) -> void:
@@ -58,10 +155,14 @@ func get_endpoint() -> String:
 	return "ws://%s:%d" % [value, DEFAULT_PORT]
 
 
+# ---------------------------------------------------------------------------
+# Matchmaking
+# ---------------------------------------------------------------------------
+
 func create_game() -> void:
 	is_host = true
 	room_code = ROOM_CODE
-	_start_matchmaking(true)
+	_start_matchmaking(true, "pvp")
 
 
 func join_game(code: String = ROOM_CODE) -> void:
@@ -69,7 +170,15 @@ func join_game(code: String = ROOM_CODE) -> void:
 	room_code = code.strip_edges().to_lower()
 	if room_code.is_empty():
 		room_code = ROOM_CODE
-	_start_matchmaking(false)
+	_start_matchmaking(false, "pvp")
+
+
+## Solo match against the server-side bot. config_overrides is a flat
+## dictionary of numeric dev settings (validated server-side, solo only).
+func create_solo_game(config_overrides: Dictionary = {}) -> void:
+	is_host = true
+	room_code = ROOM_CODE
+	_start_matchmaking(true, "solo", config_overrides)
 
 
 func leave_room() -> void:
@@ -80,38 +189,90 @@ func leave_room() -> void:
 		room.leave()
 	room = null
 	client = null
-	remote_players.clear()
+	_callbacks = null
+	_has_state = false
 
 
 func is_in_multiplayer() -> bool:
 	return room != null or web_room != null
 
 
-## Broadcast our knight's movement (current position + click target) to the
-## other players in the room. No-op in single player.
-func send_move(pos: Vector2, target: Vector2) -> void:
-	var payload := {"x": pos.x, "y": pos.y, "tx": target.x, "ty": target.y}
+# ---------------------------------------------------------------------------
+# State access
+# ---------------------------------------------------------------------------
+
+## Root MatchState schema instance, or null before the first patch / on web.
+func get_state() -> Variant:
+	if room == null:
+		return null
+	return room.get_state()
+
+
+func has_state() -> bool:
+	return _has_state
+
+
+## Our team id: room creator (host / solo) is "blue", the joiner is "red".
+func my_team() -> String:
+	return "blue" if is_host else "red"
+
+
+func enemy_team() -> String:
+	return "red" if is_host else "blue"
+
+
+# ---------------------------------------------------------------------------
+# Intents (the server validates everything; we only express wishes)
+# ---------------------------------------------------------------------------
+
+func send_move(pos: Vector2) -> void:
+	_send("move", {"x": pos.x, "y": pos.y})
+
+
+func send_buy_item(item: String) -> void:
+	_send("buy_item", {"item": item})
+
+
+func send_build_mine() -> void:
+	_send("build_mine", {})
+
+
+func send_spawn_unit(type: String) -> void:
+	_send("spawn_unit", {"type": type})
+
+
+func send_set_command(cmd: String) -> void:
+	_send("set_command", {"command": cmd})
+
+
+func _send(type: String, payload: Dictionary) -> void:
 	if web_room != null:
-		web_room.send_message("move", payload)
+		web_room.send_message(type, payload)
 	elif room != null and room.connected:
-		room.send_message("move", payload)
+		room.send_message(type, payload)
 
 
-func _start_matchmaking(as_host: bool) -> void:
+# ---------------------------------------------------------------------------
+# Internals
+# ---------------------------------------------------------------------------
+
+func _start_matchmaking(as_host: bool, mode: String, config_overrides: Dictionary = {}) -> void:
 	leave_room()
 	status_changed.emit("Connecting to %s ..." % get_endpoint())
+
+	var options := {"code": room_code, "mode": mode}
+	if mode == "solo":
+		options["configOverrides"] = config_overrides
 
 	if OS.has_feature("web"):
 		web_room = WebNetwork.new()
 		web_room.joined.connect(_on_room_joined)
 		web_room.error.connect(_on_room_error)
 		web_room.left.connect(_on_room_left)
-		web_room.message_received.connect(_handle_message)
-		web_room.join_room(get_endpoint(), ROOM_NAME, {"code": room_code}, as_host)
+		web_room.join_room(get_endpoint(), ROOM_NAME, options, as_host)
 		return
 
 	client = Colyseus.Client.new(get_endpoint())
-	var options := {"code": room_code}
 	if as_host:
 		room = client.create(ROOM_NAME, options)
 	else:
@@ -123,35 +284,46 @@ func _start_matchmaking(as_host: bool) -> void:
 		room_failed.emit(msg)
 		return
 
+	room.set_state_type(MatchState)
 	room.joined.connect(_on_room_joined)
 	room.error.connect(_on_room_error)
 	room.left.connect(_on_room_left)
-	room.message_received.connect(_handle_message)
+	room.state_changed.connect(_on_state_changed)
 
 
-## Handles messages relayed by the server (both native and web paths).
-func _handle_message(type: Variant, data: Variant) -> void:
-	match str(type):
-		"move":
-			if data is Dictionary:
-				var id := str(data.get("id", ""))
-				var pos := Vector2(data.get("x", 0.0), data.get("y", 0.0))
-				var target := Vector2(data.get("tx", 0.0), data.get("ty", 0.0))
-				remote_players[id] = {"pos": pos, "target": target}
-				remote_player_moved.emit(id, pos, target)
-		"roster":
-			if data is Array:
-				for entry in data:
-					if entry is Dictionary:
-						var id := str(entry.get("id", ""))
-						var pos := Vector2(entry.get("x", 0.0), entry.get("y", 0.0))
-						remote_players[id] = {"pos": pos, "target": pos}
-						remote_player_moved.emit(id, pos, pos)
-		"player_left":
-			if data is Dictionary:
-				var id := str(data.get("id", ""))
-				remote_players.erase(id)
-				remote_player_left.emit(id)
+func _on_state_changed() -> void:
+	if not _has_state:
+		var state: Variant = get_state()
+		if state == null:
+			return
+		_has_state = true
+		_wire_entity_callbacks(state)
+		state_ready.emit()
+	state_updated.emit()
+
+
+func _wire_entity_callbacks(state: Variant) -> void:
+	_callbacks = Colyseus.Callbacks.of(room)
+	if _callbacks == null:
+		return
+	_callbacks.on_add(state, "units", _on_unit_add)
+	_callbacks.on_remove(state, "units", _on_unit_remove)
+
+
+## The native callback argument order isn't documented; tolerate both
+## (item, key) and (key, item). The key is always the String, the unit a Schema.
+func _on_unit_add(a = null, b = null) -> void:
+	if a is String or a is StringName:
+		unit_added.emit(str(a), b)
+	else:
+		unit_added.emit(str(b), a)
+
+
+func _on_unit_remove(a = null, b = null) -> void:
+	if a is String or a is StringName:
+		unit_removed.emit(str(a))
+	else:
+		unit_removed.emit(str(b))
 
 
 func _on_room_joined() -> void:
@@ -172,4 +344,5 @@ func _on_room_left(code: int, reason: String) -> void:
 	status_changed.emit("Left room [%d]: %s" % [code, reason])
 	room = null
 	web_room = null
-	remote_players.clear()
+	_callbacks = null
+	_has_state = false
