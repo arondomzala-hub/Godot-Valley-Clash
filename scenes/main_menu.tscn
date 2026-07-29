@@ -1,0 +1,206 @@
+[gd_scene format=3 uid="uid://dgusoyopa8dog"]
+
+[ext_resource type="Script" path="res://scripts/main_menu.gd" id="1_script"]
+[ext_resource type="Texture2D" uid="uid://c6qw4xvx6c4gk" path="res://assets/ui/main_menu_bg.png" id="2_bg"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_normal"]
+bg_color = Color(0.18, 0.22, 0.28, 0.88)
+border_width_left = 3
+border_width_top = 3
+border_width_right = 3
+border_width_bottom = 3
+border_color = Color(0.75, 0.62, 0.35, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+shadow_color = Color(0, 0, 0, 0.45)
+shadow_size = 6
+shadow_offset = Vector2(0, 3)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_hover"]
+bg_color = Color(0.28, 0.36, 0.48, 0.95)
+border_width_left = 3
+border_width_top = 3
+border_width_right = 3
+border_width_bottom = 3
+border_color = Color(0.95, 0.82, 0.4, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+shadow_color = Color(0, 0, 0, 0.5)
+shadow_size = 8
+shadow_offset = Vector2(0, 4)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_pressed"]
+bg_color = Color(0.12, 0.16, 0.22, 0.95)
+border_width_left = 3
+border_width_top = 3
+border_width_right = 3
+border_width_bottom = 3
+border_color = Color(0.55, 0.45, 0.22, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+shadow_color = Color(0, 0, 0, 0.35)
+shadow_size = 2
+shadow_offset = Vector2(0, 1)
+
+[node name="MainMenu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_script")
+
+[node name="Background" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+texture = ExtResource("2_bg")
+expand_mode = 1
+stretch_mode = 6
+
+[node name="Dim" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.28)
+
+[node name="Center" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="MenuColumn" type="VBoxContainer" parent="Center"]
+layout_mode = 2
+theme_override_constants/separation = 18
+
+[node name="Title" type="Label" parent="Center/MenuColumn"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.98, 0.94, 0.82, 1)
+theme_override_colors/font_outline_color = Color(0.08, 0.1, 0.14, 1)
+theme_override_constants/outline_size = 10
+theme_override_font_sizes/font_size = 64
+text = "Valley Clash"
+horizontal_alignment = 1
+
+[node name="Subtitle" type="Label" parent="Center/MenuColumn"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.85, 0.88, 0.92, 1)
+theme_override_colors/font_outline_color = Color(0.05, 0.06, 0.08, 1)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 18
+text = "Choose your path"
+horizontal_alignment = 1
+
+[node name="Spacer" type="Control" parent="Center/MenuColumn"]
+custom_minimum_size = Vector2(0, 12)
+layout_mode = 2
+
+[node name="HostRow" type="HBoxContainer" parent="Center/MenuColumn"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="HostLabel" type="Label" parent="Center/MenuColumn/HostRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.9, 0.9, 0.85, 1)
+theme_override_colors/font_outline_color = Color(0.05, 0.06, 0.08, 1)
+theme_override_constants/outline_size = 3
+theme_override_font_sizes/font_size = 16
+text = "Server IP"
+
+[node name="HostField" type="LineEdit" parent="Center/MenuColumn/HostRow"]
+custom_minimum_size = Vector2(220, 36)
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "127.0.0.1"
+placeholder_text = "127.0.0.1"
+alignment = 1
+
+[node name="CodeLabel" type="Label" parent="Center/MenuColumn"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.95, 0.82, 0.4, 1)
+theme_override_colors/font_outline_color = Color(0.08, 0.1, 0.14, 1)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 20
+text = "Room code: xxxx"
+horizontal_alignment = 1
+
+[node name="Status" type="Label" parent="Center/MenuColumn"]
+custom_minimum_size = Vector2(360, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.78, 0.84, 0.9, 1)
+theme_override_colors/font_outline_color = Color(0.05, 0.06, 0.08, 1)
+theme_override_constants/outline_size = 3
+theme_override_font_sizes/font_size = 14
+text = "Start the Colyseus server, then create or join."
+horizontal_alignment = 1
+autowrap_mode = 3
+
+[node name="SinglePlayer" type="Button" parent="Center/MenuColumn"]
+custom_minimum_size = Vector2(320, 52)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.96, 0.93, 0.85, 1)
+theme_override_colors/font_hover_color = Color(1, 0.98, 0.9, 1)
+theme_override_colors/font_pressed_color = Color(0.8, 0.75, 0.65, 1)
+theme_override_font_sizes/font_size = 24
+theme_override_styles/normal = SubResource("StyleBoxFlat_normal")
+theme_override_styles/hover = SubResource("StyleBoxFlat_hover")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_pressed")
+text = "Single Player"
+
+[node name="CreateGame" type="Button" parent="Center/MenuColumn"]
+custom_minimum_size = Vector2(320, 52)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.96, 0.93, 0.85, 1)
+theme_override_colors/font_hover_color = Color(1, 0.98, 0.9, 1)
+theme_override_colors/font_pressed_color = Color(0.8, 0.75, 0.65, 1)
+theme_override_font_sizes/font_size = 24
+theme_override_styles/normal = SubResource("StyleBoxFlat_normal")
+theme_override_styles/hover = SubResource("StyleBoxFlat_hover")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_pressed")
+text = "Create Game"
+
+[node name="JoinGame" type="Button" parent="Center/MenuColumn"]
+custom_minimum_size = Vector2(320, 52)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.96, 0.93, 0.85, 1)
+theme_override_colors/font_hover_color = Color(1, 0.98, 0.9, 1)
+theme_override_colors/font_pressed_color = Color(0.8, 0.75, 0.65, 1)
+theme_override_font_sizes/font_size = 24
+theme_override_styles/normal = SubResource("StyleBoxFlat_normal")
+theme_override_styles/hover = SubResource("StyleBoxFlat_hover")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_pressed")
+text = "Join Game"
+
+[node name="Admin" type="Button" parent="Center/MenuColumn"]
+custom_minimum_size = Vector2(320, 52)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.96, 0.93, 0.85, 1)
+theme_override_colors/font_hover_color = Color(1, 0.98, 0.9, 1)
+theme_override_colors/font_pressed_color = Color(0.8, 0.75, 0.65, 1)
+theme_override_font_sizes/font_size = 24
+theme_override_styles/normal = SubResource("StyleBoxFlat_normal")
+theme_override_styles/hover = SubResource("StyleBoxFlat_hover")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_pressed")
+text = "Admin"
+
+[connection signal="pressed" from="Center/MenuColumn/SinglePlayer" to="." method="_on_single_player_pressed"]
+[connection signal="pressed" from="Center/MenuColumn/CreateGame" to="." method="_on_create_game_pressed"]
+[connection signal="pressed" from="Center/MenuColumn/JoinGame" to="." method="_on_join_game_pressed"]
+[connection signal="pressed" from="Center/MenuColumn/Admin" to="." method="_on_admin_pressed"]

@@ -8,3 +8,11 @@ export_presets.cfg
 .mono/
 data_*/
 android/
+
+# Colyseus server
+server/node_modules/
+server/build/
+server/.colyseus-cloud/
+
+addons/colyseus/bin/~*
+
