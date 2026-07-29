@@ -11,6 +11,8 @@ const CLOUD_ENDPOINT := "wss://pl-waw-ab59d502.colyseus.cloud"
 signal room_joined(room: Variant)
 signal room_failed(message: String)
 signal status_changed(text: String)
+signal remote_player_moved(id: String, pos: Vector2, target: Vector2)
+signal remote_player_left(id: String)
 
 ## Web builds can't load the Colyseus GDExtension; they use the JS SDK adapter.
 const WebNetwork := preload("res://scripts/web_network.gd")
@@ -22,6 +24,9 @@ var is_host: bool = false
 ## Raw value from the Server IP field (host, URL, or full ws/wss endpoint).
 var server_host: String = CLOUD_ENDPOINT
 var room_code: String = ROOM_CODE
+## Last known state of every other player in the room:
+## session_id -> {"pos": Vector2, "target": Vector2}
+var remote_players: Dictionary = {}
 
 
 func set_server_host(host: String) -> void:
@@ -75,6 +80,21 @@ func leave_room() -> void:
 		room.leave()
 	room = null
 	client = null
+	remote_players.clear()
+
+
+func is_in_multiplayer() -> bool:
+	return room != null or web_room != null
+
+
+## Broadcast our knight's movement (current position + click target) to the
+## other players in the room. No-op in single player.
+func send_move(pos: Vector2, target: Vector2) -> void:
+	var payload := {"x": pos.x, "y": pos.y, "tx": target.x, "ty": target.y}
+	if web_room != null:
+		web_room.send_message("move", payload)
+	elif room != null and room.connected:
+		room.send_message("move", payload)
 
 
 func _start_matchmaking(as_host: bool) -> void:
@@ -86,6 +106,7 @@ func _start_matchmaking(as_host: bool) -> void:
 		web_room.joined.connect(_on_room_joined)
 		web_room.error.connect(_on_room_error)
 		web_room.left.connect(_on_room_left)
+		web_room.message_received.connect(_handle_message)
 		web_room.join_room(get_endpoint(), ROOM_NAME, {"code": room_code}, as_host)
 		return
 
@@ -105,6 +126,32 @@ func _start_matchmaking(as_host: bool) -> void:
 	room.joined.connect(_on_room_joined)
 	room.error.connect(_on_room_error)
 	room.left.connect(_on_room_left)
+	room.message_received.connect(_handle_message)
+
+
+## Handles messages relayed by the server (both native and web paths).
+func _handle_message(type: Variant, data: Variant) -> void:
+	match str(type):
+		"move":
+			if data is Dictionary:
+				var id := str(data.get("id", ""))
+				var pos := Vector2(data.get("x", 0.0), data.get("y", 0.0))
+				var target := Vector2(data.get("tx", 0.0), data.get("ty", 0.0))
+				remote_players[id] = {"pos": pos, "target": target}
+				remote_player_moved.emit(id, pos, target)
+		"roster":
+			if data is Array:
+				for entry in data:
+					if entry is Dictionary:
+						var id := str(entry.get("id", ""))
+						var pos := Vector2(entry.get("x", 0.0), entry.get("y", 0.0))
+						remote_players[id] = {"pos": pos, "target": pos}
+						remote_player_moved.emit(id, pos, pos)
+		"player_left":
+			if data is Dictionary:
+				var id := str(data.get("id", ""))
+				remote_players.erase(id)
+				remote_player_left.emit(id)
 
 
 func _on_room_joined() -> void:
@@ -125,3 +172,4 @@ func _on_room_left(code: int, reason: String) -> void:
 	status_changed.emit("Left room [%d]: %s" % [code, reason])
 	room = null
 	web_room = null
+	remote_players.clear()

@@ -15,11 +15,13 @@
 [ext_resource type="Script" uid="uid://gc85nqygdioi" path="res://scripts/hero.gd" id="14_hero_script"]
 [ext_resource type="Texture2D" uid="uid://cw4ypvs0epmdu" path="res://assets/characters/player_A.png" id="15_c00ee"]
 [ext_resource type="Script" uid="uid://d3b48y6oiqr8b" path="res://scripts/camera_pan.gd" id="15_camera_script"]
+[ext_resource type="Script" path="res://scripts/map.gd" id="16_map_script"]
 
 [sub_resource type="CircleShape2D" id="CircleShape2D_hero"]
 radius = 20.0
 
 [node name="Map" type="Node2D" unique_id=70872849]
+script = ExtResource("16_map_script")
 
 [node name="Camera2D" type="Camera2D" parent="." unique_id=761509968]
 zoom = Vector2(0.5, 0.5)

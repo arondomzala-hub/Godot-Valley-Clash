@@ -11,6 +11,7 @@ extends RefCounted
 signal joined()
 signal error(code: int, message: String)
 signal left(code: int, reason: String)
+signal message_received(type: Variant, data: Variant)
 
 var connected: bool = false
 
@@ -21,13 +22,14 @@ var _glue: JavaScriptObject
 var _joined_cb: JavaScriptObject
 var _error_cb: JavaScriptObject
 var _left_cb: JavaScriptObject
+var _message_cb: JavaScriptObject
 
 const _GLUE_JS := """
 (function () {
 	if (window.__valleyNet) return;
 	window.__valleyNet = {
 		room: null,
-		joinRoom: function (endpoint, roomName, optionsJson, asHost, onJoined, onError, onLeft) {
+		joinRoom: function (endpoint, roomName, optionsJson, asHost, onJoined, onError, onLeft, onMessage) {
 			var self = this;
 			self.leaveRoom();
 			if (typeof Colyseus === "undefined") {
@@ -53,12 +55,23 @@ const _GLUE_JS := """
 					self.room = null;
 					onLeft(code || 0, "");
 				});
+				room.onMessage("*", function (type, message) {
+					onMessage(String(type), JSON.stringify(message));
+				});
 				onJoined();
 			}).catch(function (e) {
 				var code = (e && typeof e.code === "number") ? e.code : 0;
 				var message = (e && e.message) ? e.message : String(e);
 				onError(code, message);
 			});
+		},
+		sendMessage: function (type, payloadJson) {
+			if (!this.room) return;
+			var payload = null;
+			try {
+				payload = JSON.parse(payloadJson);
+			} catch (e) {}
+			try { this.room.send(type, payload); } catch (e) {}
 		},
 		leaveRoom: function () {
 			if (this.room) {
@@ -80,6 +93,7 @@ func _init() -> void:
 	_joined_cb = JavaScriptBridge.create_callback(_on_js_joined)
 	_error_cb = JavaScriptBridge.create_callback(_on_js_error)
 	_left_cb = JavaScriptBridge.create_callback(_on_js_left)
+	_message_cb = JavaScriptBridge.create_callback(_on_js_message)
 
 
 ## Create (host) or join a room. Mirrors Colyseus.Client.create/join.
@@ -88,7 +102,13 @@ func join_room(endpoint: String, room_name: String, options: Dictionary, as_host
 		error.emit(0, "Web network glue unavailable.")
 		return
 	_glue.joinRoom(endpoint, room_name, JSON.stringify(options), as_host,
-			_joined_cb, _error_cb, _left_cb)
+			_joined_cb, _error_cb, _left_cb, _message_cb)
+
+
+## Send a room message. Mirrors Colyseus.Room.send_message.
+func send_message(type: String, data: Variant = null) -> void:
+	if _glue != null:
+		_glue.sendMessage(type, JSON.stringify(data))
 
 
 func leave() -> void:
@@ -114,3 +134,11 @@ func _on_js_left(args: Array) -> void:
 	var code: int = int(args[0]) if args.size() > 0 and args[0] != null else 0
 	var reason: String = str(args[1]) if args.size() > 1 and args[1] != null else ""
 	left.emit(code, reason)
+
+
+func _on_js_message(args: Array) -> void:
+	if args.size() < 2:
+		return
+	var type := str(args[0])
+	var data: Variant = JSON.parse_string(str(args[1]))
+	message_received.emit(type, data)

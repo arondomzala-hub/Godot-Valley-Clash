@@ -5,9 +5,12 @@ extends Control
 @onready var _host_field: LineEdit = $Center/MenuColumn/HostRow/HostField
 @onready var _code_label: Label = $Center/MenuColumn/CodeLabel
 
+var _quit_dialog: ConfirmationDialog
+
 
 func _ready() -> void:
 	_load_background()
+	_create_quit_dialog()
 	_host_field.text = Network.server_host
 	_host_field.placeholder_text = "Cloud URL or LAN IP"
 	_code_label.text = "Room code: %s" % Network.ROOM_CODE
@@ -16,6 +19,23 @@ func _ready() -> void:
 		Network.status_changed.connect(_on_network_status)
 	if not Network.room_failed.is_connected(_on_network_failed):
 		Network.room_failed.connect(_on_network_failed)
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("ui_cancel"):
+		_quit_dialog.popup_centered()
+		get_viewport().set_input_as_handled()
+
+
+func _create_quit_dialog() -> void:
+	_quit_dialog = ConfirmationDialog.new()
+	_quit_dialog.title = "Exit game"
+	_quit_dialog.dialog_text = "Do you want to leave?"
+	_quit_dialog.ok_button_text = "Yes"
+	_quit_dialog.cancel_button_text = "No"
+	_quit_dialog.exclusive = true
+	_quit_dialog.confirmed.connect(func() -> void: get_tree().quit())
+	add_child(_quit_dialog)
 
 
 func _load_background() -> void:

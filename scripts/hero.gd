@@ -17,6 +17,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			and event.pressed:
 		_target = get_global_mouse_position()
 		_has_target = true
+		# Let the other players see this move (no-op in single player).
+		Network.send_move(global_position, _target)
 		get_viewport().set_input_as_handled()
 
 
