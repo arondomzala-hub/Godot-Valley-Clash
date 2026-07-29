@@ -23,6 +23,9 @@ const BASE_DEFAULTS := {
 	"item_price_boots": 60,
 	"item_price_armor": 70,
 	"max_items": 4,
+	# Keep melee_range >= 2 * unit_radius so packed units can still fight.
+	"melee_range": 60,
+	"unit_radius": 28,
 }
 
 ## Per unit type: [cost, hp, damage, speed].

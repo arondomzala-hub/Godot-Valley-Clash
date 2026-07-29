@@ -40,7 +40,8 @@ const CASTLE_POS: Record<TeamId, { x: number; y: number }> = {
 };
 
 // Combat / movement tuning that is not player-facing config.
-const MELEE_RANGE = 60;
+// (melee_range and unit_radius live in GameConfig so the admin panel can
+// tune them in solo matches.)
 const CASTLE_HIT_RANGE = 120;
 const AGGRO_RADIUS = 300;
 const UNIT_ATTACK_SPEED = 1.0;
@@ -49,6 +50,11 @@ const RALLY_OFFSET = 250;
 const UNIT_SPAWN_Y_OFFSET = 150;
 const BOT_TICK_MS = 2000;
 const FINISHED_DISPOSE_MS = 15_000;
+
+// Collision separation: units/knights occupy space instead of stacking.
+const KNIGHT_RADIUS = 28;
+const CASTLE_RADIUS = 80;
+const SEPARATION_ITERATIONS = 2;
 
 const COMMANDS = ["attack", "hold", "defend"];
 
@@ -257,6 +263,81 @@ export class GameRoom extends Room {
       if (this.state.phase !== "playing") return;
     }
     this.tickUnits(dt);
+    if (this.state.phase !== "playing") return;
+    this.resolveCollisions();
+  }
+
+  /**
+   * Pushes overlapping units/knights apart (circle separation) and keeps
+   * everyone out of the castle circles, so entities cannot stack on one spot.
+   */
+  private resolveCollisions(): void {
+    const colliders: { ref: { x: number; y: number }; radius: number }[] = [];
+    this.state.units.forEach((unit) => {
+      colliders.push({ ref: unit, radius: this.config.unit_radius });
+    });
+    for (const teamId of TEAM_IDS) {
+      const knight = this.state.knights.get(teamId);
+      if (knight && knight.alive) {
+        colliders.push({ ref: knight, radius: KNIGHT_RADIUS });
+      }
+    }
+    if (colliders.length === 0) return;
+
+    for (let iter = 0; iter < SEPARATION_ITERATIONS; iter++) {
+      for (let i = 0; i < colliders.length; i++) {
+        const a = colliders[i];
+        for (let j = i + 1; j < colliders.length; j++) {
+          const b = colliders[j];
+          const minDist = a.radius + b.radius;
+          let dx = b.ref.x - a.ref.x;
+          let dy = b.ref.y - a.ref.y;
+          let d = Math.hypot(dx, dy);
+          if (d >= minDist) continue;
+
+          if (d < 1e-3) {
+            // Exactly stacked (e.g. fresh spawns): split along a deterministic
+            // angle so the pair doesn't stay merged.
+            const angle = ((i * 31 + j * 17) % 12) * (Math.PI / 6);
+            dx = Math.cos(angle);
+            dy = Math.sin(angle);
+            d = 1;
+          }
+
+          const push = (minDist - d) / 2;
+          const nx = dx / d;
+          const ny = dy / d;
+          a.ref.x -= nx * push;
+          a.ref.y -= ny * push;
+          b.ref.x += nx * push;
+          b.ref.y += ny * push;
+        }
+      }
+
+      // Static obstacles: castles never move, entities take the full push.
+      for (const c of colliders) {
+        for (const teamId of TEAM_IDS) {
+          const castlePos = CASTLE_POS[teamId];
+          const minDist = CASTLE_RADIUS + c.radius;
+          let dx = c.ref.x - castlePos.x;
+          let dy = c.ref.y - castlePos.y;
+          let d = Math.hypot(dx, dy);
+          if (d >= minDist) continue;
+          if (d < 1e-3) {
+            dx = 0;
+            dy = teamId === "blue" ? 1 : -1;
+            d = 1;
+          }
+          c.ref.x = castlePos.x + (dx / d) * minDist;
+          c.ref.y = castlePos.y + (dy / d) * minDist;
+        }
+      }
+
+      for (const c of colliders) {
+        c.ref.x = clamp(c.ref.x, MAP_MIN_X, MAP_MAX_X);
+        c.ref.y = clamp(c.ref.y, MAP_MIN_Y, MAP_MAX_Y);
+      }
+    }
   }
 
   private tickIncome(dt: number): void {
@@ -296,7 +377,7 @@ export class GameRoom extends Room {
     // Armed knights stop and fight anything in melee range, then resume moving.
     if (knight.damage > 0) {
       const enemyTeam = enemyOf(teamId);
-      const target = this.nearestEnemy(enemyTeam, knight.x, knight.y, MELEE_RANGE);
+      const target = this.nearestEnemy(enemyTeam, knight.x, knight.y, this.config.melee_range);
       if (target) {
         if (rt.cooldown === 0) {
           this.hitTarget(teamId, target, knight.damage);
@@ -389,13 +470,13 @@ export class GameRoom extends Room {
     dt: number,
   ): void {
     const d = dist(unit.x, unit.y, target.ref.x, target.ref.y);
-    if (d <= MELEE_RANGE) {
+    if (d <= this.config.melee_range) {
       if (rt.cooldown === 0) {
         this.hitTarget(attackerTeam, target, rt.damage);
         rt.cooldown = 1 / UNIT_ATTACK_SPEED;
       }
     } else {
-      this.moveTowards(unit, target.ref.x, target.ref.y, rt.speed, dt, MELEE_RANGE * 0.75);
+      this.moveTowards(unit, target.ref.x, target.ref.y, rt.speed, dt, this.config.melee_range * 0.75);
     }
   }
 

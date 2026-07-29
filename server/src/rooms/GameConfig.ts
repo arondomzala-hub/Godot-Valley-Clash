@@ -67,6 +67,10 @@ function buildDefaults(): GameConfig {
     item_price_boots: 60,
     item_price_armor: 70,
     max_items: 4,
+    // Combat/collision tuning. Keep melee_range >= 2 * unit_radius so units
+    // packed against each other can still land hits.
+    melee_range: 60,
+    unit_radius: 28,
   };
   for (const type of UNIT_TYPES) {
     const [cost, hp, damage, speed] = UNIT_STATS[type];

@@ -67,6 +67,55 @@ describe("Valley Clash GameRoom", () => {
     assert.strictEqual(room.state.teams.get("blue").command, "defend");
   });
 
+  it("separates stacked units and keeps entities out of the castle", async () => {
+    const room = await colyseus.createRoom<MatchState>("game", {
+      code: ROOM_CODE,
+      mode: "solo",
+      configOverrides: { starting_gold: 1000, mine_income: 0 },
+    });
+    const client = await colyseus.connectTo(room, { code: ROOM_CODE });
+    await room.waitForNextPatch();
+
+    // "hold" with no enemies in aggro keeps units idle, so any spreading
+    // observed below comes purely from the collision separation pass.
+    client.send("set_command", { command: "hold" });
+    await room.waitForMessage("set_command");
+    for (let i = 0; i < 8; i++) {
+      client.send("spawn_unit", { type: "peasant" });
+      await room.waitForMessage("spawn_unit");
+    }
+
+    // Walk the knight into the blue castle center; it must be pushed out.
+    client.send("move", { x: 5, y: -1863 });
+    await room.waitForMessage("move");
+
+    // Let the simulation run (~30 ticks at 50 ms).
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+
+    const positions: { x: number; y: number }[] = [];
+    room.state.units.forEach((unit) => positions.push({ x: unit.x, y: unit.y }));
+    assert.strictEqual(positions.length, 8);
+
+    let minPairDist = Infinity;
+    for (let i = 0; i < positions.length; i++) {
+      for (let j = i + 1; j < positions.length; j++) {
+        const d = Math.hypot(positions[j].x - positions[i].x, positions[j].y - positions[i].y);
+        minPairDist = Math.min(minPairDist, d);
+      }
+    }
+    // Two unit radii = 48; allow slack for convergence still in progress.
+    assert.ok(minPairDist >= 46, `units still stacked: min pair distance ${minPairDist}`);
+
+    const knight = room.state.knights.get("blue");
+    const knightToCastle = Math.hypot(knight.x - 5, knight.y - -1863);
+    // Castle radius 80 + knight radius 28 = 108; the knight must not stand inside.
+    assert.ok(knightToCastle >= 104, `knight inside castle: distance ${knightToCastle}`);
+    for (const p of positions) {
+      const d = Math.hypot(p.x - 5, p.y - -1863);
+      assert.ok(d >= 100, `unit inside castle: distance ${d}`);
+    }
+  });
+
   it("pvp: waits for two players, then awards the win when one leaves", async () => {
     const room = await colyseus.createRoom<MatchState>("game", { code: ROOM_CODE });
     const client1 = await colyseus.connectTo(room, { code: ROOM_CODE });

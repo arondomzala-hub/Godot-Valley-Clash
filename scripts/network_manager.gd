@@ -129,6 +129,14 @@ var _has_state: bool = false
 var _web_state: Dictionary = {}
 
 
+func _ready() -> void:
+	# Dev convenience: pre-fill the Server IP field from the environment,
+	# e.g. VALLEY_SERVER_HOST=127.0.0.1 to test against a local server.
+	var env_host := OS.get_environment("VALLEY_SERVER_HOST")
+	if not env_host.is_empty():
+		server_host = env_host
+
+
 func set_server_host(host: String) -> void:
 	server_host = host.strip_edges()
 	if server_host.is_empty():
