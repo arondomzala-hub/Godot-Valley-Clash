@@ -10,9 +10,11 @@ data_*/
 android/
 
 # Colyseus server
+node_modules/
 server/node_modules/
 server/build/
 server/.colyseus-cloud/
+.colyseus-cloud.json
 
 addons/colyseus/bin/~*
 

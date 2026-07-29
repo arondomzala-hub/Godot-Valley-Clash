@@ -1,0 +1,11 @@
+{
+  "private": true,
+  "name": "valley-clash",
+  "description": "Root package for Colyseus Cloud — app lives in server/",
+  "engines": {
+    "node": ">= 20.9.0"
+  },
+  "scripts": {
+    "build": "npm install --prefix server && npm run build --prefix server"
+  }
+}
