@@ -1,0 +1,108 @@
+name: Build Godot Web dlink Export Template
+
+# Builds web_dlink_release.zip (and web_dlink_debug.zip) for Godot 4.7.1.stable
+# so the Colyseus GDExtension can load in a Web export.
+#
+# Pin: Godot 4.7.1-stable + Emscripten 4.0.20 (official 4.7 build-containers).
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/build-web-dlink-template.yml"
+
+env:
+  GODOT_REF: "4.7.1-stable"
+  EM_VERSION: "4.0.20"
+
+jobs:
+  build-web-dlink:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: web_dlink_release
+            target: template_release
+            artifact_name: web_dlink_release.zip
+            scons_product: godot.web.template_release.wasm32.dlink.zip
+          - name: web_dlink_debug
+            target: template_debug
+            artifact_name: web_dlink_debug.zip
+            scons_product: godot.web.template_debug.wasm32.dlink.zip
+
+    steps:
+      - name: Checkout Godot ${{ env.GODOT_REF }}
+        uses: actions/checkout@v4
+        with:
+          repository: godotengine/godot
+          ref: ${{ env.GODOT_REF }}
+          path: godot
+          fetch-depth: 1
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install SCons
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install scons==4.8.1
+
+      - name: Cache Emscripten SDK
+        uses: actions/cache@v4
+        with:
+          path: emsdk
+          key: emsdk-${{ env.EM_VERSION }}-${{ runner.os }}
+
+      - name: Setup Emscripten ${{ env.EM_VERSION }}
+        uses: emscripten-core/setup-emsdk@v14
+        with:
+          version: ${{ env.EM_VERSION }}
+          actions-cache-folder: emsdk
+
+      - name: Verify Emscripten
+        run: emcc -v
+
+      - name: Cache Godot SCons build
+        uses: actions/cache@v4
+        with:
+          path: |
+            godot/.scons_cache
+            godot/bin
+          key: godot-web-dlink-${{ env.GODOT_REF }}-${{ matrix.target }}-${{ env.EM_VERSION }}-${{ hashFiles('.github/workflows/build-web-dlink-template.yml') }}
+          restore-keys: |
+            godot-web-dlink-${{ env.GODOT_REF }}-${{ matrix.target }}-${{ env.EM_VERSION }}-
+
+      - name: Build ${{ matrix.artifact_name }}
+        working-directory: godot
+        env:
+          SCONS_CACHE: ${{ github.workspace }}/godot/.scons_cache
+          # Limit parallelism a bit to reduce OOM risk on GitHub runners.
+          SCONSFLAGS: -j2
+        run: |
+          set -euo pipefail
+          scons platform=web \
+            target=${{ matrix.target }} \
+            dlink_enabled=yes \
+            arch=wasm32 \
+            threads=yes \
+            production=yes \
+            debug_symbols=no \
+            verbose=yes
+
+          ls -lah bin/
+          test -f "bin/${{ matrix.scons_product }}"
+          cp "bin/${{ matrix.scons_product }}" "${{ github.workspace }}/${{ matrix.artifact_name }}"
+          ls -lah "${{ github.workspace }}/${{ matrix.artifact_name }}"
+
+      - name: Upload ${{ matrix.artifact_name }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: ${{ matrix.artifact_name }}
+          if-no-files-found: error
+          retention-days: 90
