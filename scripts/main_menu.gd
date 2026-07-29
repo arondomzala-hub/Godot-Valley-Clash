@@ -9,8 +9,9 @@ extends Control
 func _ready() -> void:
 	_load_background()
 	_host_field.text = Network.server_host
+	_host_field.placeholder_text = "Cloud URL or LAN IP"
 	_code_label.text = "Room code: %s" % Network.ROOM_CODE
-	_set_status("Start the Colyseus server, then create or join.")
+	_set_status("Create or Join — code is always xxxx.")
 	if not Network.status_changed.is_connected(_on_network_status):
 		Network.status_changed.connect(_on_network_status)
 	if not Network.room_failed.is_connected(_on_network_failed):

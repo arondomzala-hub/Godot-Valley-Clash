@@ -128,8 +128,8 @@ text = "Server IP"
 custom_minimum_size = Vector2(220, 36)
 layout_mode = 2
 theme_override_font_sizes/font_size = 16
-text = "127.0.0.1"
-placeholder_text = "127.0.0.1"
+text = "wss://pl-waw-ab59d502.colyseus.cloud"
+placeholder_text = "wss://….colyseus.cloud"
 alignment = 1
 
 [node name="CodeLabel" type="Label" parent="Center/MenuColumn"]
