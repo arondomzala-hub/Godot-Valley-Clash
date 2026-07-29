@@ -1,0 +1,10 @@
+# Godot 4+ specific ignores
+.godot/
+*.translation
+export.cfg
+export_presets.cfg
+*.tmp
+*.import
+.mono/
+data_*/
+android/
