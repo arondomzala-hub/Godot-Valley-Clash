@@ -22,9 +22,10 @@ signal state_updated()
 signal unit_added(id: String, unit: Variant)
 signal unit_removed(id: String)
 
-## Web builds can't load the Colyseus GDExtension; they use the JS SDK adapter.
-## Known limitation: the web adapter is messages-only (no schema sync), so
-## matches won't render on web exports — desktop is the supported target.
+## Web builds can't load the Colyseus GDExtension; they use the JS SDK adapter
+## (web_network.gd), which delivers every state patch as a full JSON snapshot
+## via state_changed. This node stores that snapshot and re-emits the same
+## signals the desktop path gets from the native SDK.
 const WebNetwork := preload("res://scripts/web_network.gd")
 
 
@@ -124,6 +125,8 @@ var room_code: String = ROOM_CODE
 
 var _callbacks  # Colyseus.Callbacks, wired once the first state arrives.
 var _has_state: bool = false
+## Web only: latest full state snapshot from the JS SDK adapter.
+var _web_state: Dictionary = {}
 
 
 func set_server_host(host: String) -> void:
@@ -191,6 +194,7 @@ func leave_room() -> void:
 	client = null
 	_callbacks = null
 	_has_state = false
+	_web_state = {}
 
 
 func is_in_multiplayer() -> bool:
@@ -201,8 +205,12 @@ func is_in_multiplayer() -> bool:
 # State access
 # ---------------------------------------------------------------------------
 
-## Root MatchState schema instance, or null before the first patch / on web.
+## Root match state, or null before the first patch. Desktop returns the
+## native SDK's decoded state; web returns the latest JSON snapshot. Both are
+## plain Dictionaries with identical field names.
 func get_state() -> Variant:
+	if web_room != null:
+		return _web_state if _has_state else null
 	if room == null:
 		return null
 	return room.get_state()
@@ -269,6 +277,7 @@ func _start_matchmaking(as_host: bool, mode: String, config_overrides: Dictionar
 		web_room.joined.connect(_on_room_joined)
 		web_room.error.connect(_on_room_error)
 		web_room.left.connect(_on_room_left)
+		web_room.state_changed.connect(_on_web_state_changed)
 		web_room.join_room(get_endpoint(), ROOM_NAME, options, as_host)
 		return
 
@@ -299,6 +308,34 @@ func _on_state_changed() -> void:
 		_has_state = true
 		_wire_entity_callbacks(state)
 		state_ready.emit()
+	state_updated.emit()
+
+
+## Web path: every server patch arrives as a full JSON snapshot. Store it,
+## then emit the same signals the native SDK path produces — including
+## unit_added/unit_removed derived by diffing unit ids between snapshots
+## (map.gd only creates unit views from state_ready sweeps and unit_added).
+func _on_web_state_changed(state: Dictionary) -> void:
+	var old_units: Dictionary = {}
+	if _has_state and _web_state.get("units") is Dictionary:
+		old_units = _web_state["units"]
+	var new_units: Dictionary = {}
+	if state.get("units") is Dictionary:
+		new_units = state["units"]
+
+	var first := not _has_state
+	_web_state = state
+	_has_state = true
+
+	if first:
+		state_ready.emit()
+	else:
+		for id in new_units:
+			if not old_units.has(id):
+				unit_added.emit(str(id), new_units[id])
+		for id in old_units:
+			if not new_units.has(id):
+				unit_removed.emit(str(id))
 	state_updated.emit()
 
 

@@ -12,6 +12,8 @@ signal joined()
 signal error(code: int, message: String)
 signal left(code: int, reason: String)
 signal message_received(type: Variant, data: Variant)
+## Full state snapshot (plain Dictionary) after every server patch.
+signal state_changed(state: Dictionary)
 
 var connected: bool = false
 
@@ -23,13 +25,14 @@ var _joined_cb: JavaScriptObject
 var _error_cb: JavaScriptObject
 var _left_cb: JavaScriptObject
 var _message_cb: JavaScriptObject
+var _state_cb: JavaScriptObject
 
 const _GLUE_JS := """
 (function () {
 	if (window.__valleyNet) return;
 	window.__valleyNet = {
 		room: null,
-		joinRoom: function (endpoint, roomName, optionsJson, asHost, onJoined, onError, onLeft, onMessage) {
+		joinRoom: function (endpoint, roomName, optionsJson, asHost, onJoined, onError, onLeft, onMessage, onState) {
 			var self = this;
 			self.leaveRoom();
 			if (typeof Colyseus === "undefined") {
@@ -57,6 +60,19 @@ const _GLUE_JS := """
 				});
 				room.onMessage("*", function (type, message) {
 					onMessage(String(type), JSON.stringify(message));
+				});
+				// Fires once with the full state, then after every patch
+				// (~20 Hz). Serialized to JSON and handed to GDScript the
+				// same way messages are (string arg through the bridge).
+				room.onStateChange(function (state) {
+					var json = null;
+					try {
+						var plain = (state && typeof state.toJSON === "function")
+							? state.toJSON()
+							: state;
+						json = JSON.stringify(plain);
+					} catch (e) {}
+					if (json) onState(json);
 				});
 				onJoined();
 			}).catch(function (e) {
@@ -94,6 +110,7 @@ func _init() -> void:
 	_error_cb = JavaScriptBridge.create_callback(_on_js_error)
 	_left_cb = JavaScriptBridge.create_callback(_on_js_left)
 	_message_cb = JavaScriptBridge.create_callback(_on_js_message)
+	_state_cb = JavaScriptBridge.create_callback(_on_js_state)
 
 
 ## Create (host) or join a room. Mirrors Colyseus.Client.create/join.
@@ -102,7 +119,7 @@ func join_room(endpoint: String, room_name: String, options: Dictionary, as_host
 		error.emit(0, "Web network glue unavailable.")
 		return
 	_glue.joinRoom(endpoint, room_name, JSON.stringify(options), as_host,
-			_joined_cb, _error_cb, _left_cb, _message_cb)
+			_joined_cb, _error_cb, _left_cb, _message_cb, _state_cb)
 
 
 ## Send a room message. Mirrors Colyseus.Room.send_message.
@@ -142,3 +159,11 @@ func _on_js_message(args: Array) -> void:
 	var type := str(args[0])
 	var data: Variant = JSON.parse_string(str(args[1]))
 	message_received.emit(type, data)
+
+
+func _on_js_state(args: Array) -> void:
+	if args.is_empty() or args[0] == null:
+		return
+	var parsed: Variant = JSON.parse_string(str(args[0]))
+	if parsed is Dictionary:
+		state_changed.emit(parsed)
